@@ -8,8 +8,13 @@ z:189e1b35915e4fb002a662566a5a2e3e37907e64:payroll@0.1.1. DIDs and the
 contract id are not secret; no API key appears in this file.
 
 This is two consecutive real runs, not one — see the note before Part 2 for
-why. Nothing below is edited except removing a `node_modules` warning line
-and adding these section headers.
+why. Nothing below is edited except: removing a `node_modules` warning
+line, adding these section headers, and abbreviating the `"lines"` arrays
+in steps 5/6 to `[ ... same three lines as step 3 ... ]` — `finalize-audit`
+and `get-audit-entry` read back the same cycle's per-employee lines as
+`compute-payroll`/`execute-disbursement` (step 3) computed; the original
+unabbreviated output wasn't separately preserved, so this is described
+rather than reproduced verbatim.
 
 
 PART 1 — full pipeline, `npm run payroll` (src/run-payroll.ts), before the
@@ -135,8 +140,17 @@ Cycle: cycle-2026-09-14-mu0vmv49
 entry by exact key one line above, but list-audit-cycles's kv-store scan
 over the same map came back empty)
 
-=== PII check ===
-OK: no raw bank account/routing numbers appear anywhere in the audit entry.
+=== PII check (on THIS audit entry only — Part 1, disbursed_count: 0) ===
+OK: no raw bank account/routing numbers appear anywhere in this audit
+entry. Caveat: nothing was actually disbursed on this cycle (egress was
+denied — see step 3), so this check alone doesn't prove PII-safety on a
+disbursed line. Part 2 below is the run that actually disburses via
+http-with-placeholders; its cycle was never finalized/audited separately
+(see the note before Part 2), so no equivalent per-entry PII check was
+run against it in this file. The broader claim — that the seeded demo
+bank digits never appear anywhere in this repo's logs or code outside
+`setup.ts` — is verified independently by grepping the whole repository,
+not by this single audit-entry check.
 
 
 PART 2 — execute-disbursement retried on the SAME cycle, after adding the
