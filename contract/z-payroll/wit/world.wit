@@ -1,0 +1,84 @@
+/// z-payroll WIT world — enterprise payroll agent reference contract.
+///
+/// Pipeline: validate-credentials -> compute-payroll -> execute-disbursement
+/// -> finalize-audit, with submit-escalations for out-of-policy lines and
+/// get-audit-entry / list-audit-cycles for read-back. Mirrors the function
+/// surface the @terminal3/t3n-sdk SDK ships as `Z_PAYROLL_RUN_FUNCTIONS` /
+/// `Z_PAYROLL_AUDIT_READ_FUNCTIONS`.
+///
+/// PII handling: employee bank details for the one profile-linked employee
+/// (the demo's real T3N user) are NEVER passed as contract arguments or
+/// stored in KV. `execute-disbursement` templates `{{profile.bank_account_number}}`
+/// / `{{profile.bank_routing_number}}` markers into the outbound bank-transfer
+/// body; the host resolves them from the calling user's own T3N profile at
+/// dispatch time via `http-with-placeholders`, so this contract's WASM never
+/// holds the plaintext account number. Synthetic demo employees (no T3N
+/// profile of their own) use plain `http` with KV-stored fake values —
+/// clearly flagged in the response so a caller never confuses the two trust
+/// levels. See README.md "PII model" for the full explanation.
+package z:payroll@0.1.0;
+
+world payroll {
+    import host:tenant/tenant-context@1.0.0;
+    import host:interfaces/logging@2.1.0;
+    import host:interfaces/kv-store@2.1.0;
+    import host:interfaces/http@2.1.0;                    // synthetic-employee disbursement (no real PII)
+    import host:interfaces/http-with-placeholders@2.1.0;  // profile-linked employee disbursement (real PII, host-resolved)
+
+    export contracts;
+}
+
+interface contracts {
+    /// Standard 3-field envelope used by all contracts callable from the node.
+    record generic-input {
+        input:        option<list<u8>>,
+        user-profile: option<list<u8>>,
+        context:      option<list<u8>>,
+    }
+
+    /// Preconditions check for a pay cycle: employee roster present, bank
+    /// secret configured, cycle not already finalized. Creates the cycle's
+    /// working record with status "validated".
+    /// Input  (JSON): { cycle_id }
+    /// Output (JSON): { cycle_id, status, employee_count }
+    validate-credentials: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// Compute net pay per employee for the cycle, flag amounts exceeding
+    /// the per-employee threshold or deviating >50% from the supplied
+    /// historical baseline, and enforce the run against batch-cap-cents.
+    /// Input  (JSON): PayrollRunRequest (org_id, cycle_id, pay_period_start,
+    ///   pay_period_end, batch_cap_cents (string), historical_baselines
+    ///   (map string->string), individual_disbursement_threshold_cents?
+    ///   (string)).
+    /// Output (JSON): { cycle_id, total_cents, lines: [{employee_id, amount_cents, flagged, flag_reason?}] }
+    compute-payroll: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// Disburse every unflagged line of a computed cycle. Profile-linked
+    /// employee -> http-with-placeholders (real PII, host-resolved).
+    /// Synthetic employees -> plain http with KV-stored fake values.
+    /// Input  (JSON): { cycle_id }
+    /// Output (JSON): { cycle_id, results: [{employee_id, disbursed, bank_ref?, pii_mode, error?}] }
+    execute-disbursement: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// Close out the cycle: write an immutable audit entry (totals + per-line
+    /// outcome, no PII) into the audit_cycles map.
+    /// Input  (JSON): { cycle_id }
+    /// Output (JSON): the AuditEntry that was written
+    finalize-audit: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// Collect flagged lines from a computed/disbursed cycle for human
+    /// review, and record the escalation on the cycle record.
+    /// Input  (JSON): { cycle_id }
+    /// Output (JSON): { cycle_id, escalations: [{employee_id, reason}] }
+    submit-escalations: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// Read back one finalized audit entry.
+    /// Input  (JSON): { cycle_id }
+    /// Output (JSON): the AuditEntry, or an error if not finalized yet
+    get-audit-entry: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// List finalized audit cycles (most recent first, bounded by limit).
+    /// Input  (JSON): { limit? } (default 20)
+    /// Output (JSON): { cycles: [AuditEntry] }
+    list-audit-cycles: func(req: generic-input) -> result<list<u8>, string>;
+}

@@ -1,0 +1,19 @@
+{
+  "name": "t3n-payroll-agent",
+  "version": "1.0.0",
+  "description": "PII-safe payroll disbursement agent on Terminal3 ADK",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "connect": "tsx src/connect.ts",
+    "build:contract": "cd contract/z-payroll && cargo build --target wasm32-wasip2 --release",
+    "setup": "tsx src/setup.ts",
+    "payroll": "tsx src/run-payroll.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@terminal3/t3n-sdk": "^5.2.0",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.23.13"
+  }
+}
